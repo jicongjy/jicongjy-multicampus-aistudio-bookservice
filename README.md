@@ -1,11 +1,19 @@
-<div align="center">
+# 독서 메뉴 (Reading Menu)
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+AI Studio에서 만든 도서 추천 웹앱입니다. 읽을 책을 "메인 메뉴 + 사이드 메뉴"처럼 조합해 추천합니다.
 
-  <h1>Built with AI Studio</h2>
+## 실행 방법
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+필요한 것: Node.js
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+1. 의존성 설치: `npm install`
+2. `.env.example`을 `.env`로 복사하고 키를 채웁니다. (`.env`는 저장소에 올라가지 않습니다.)
+   - `ANTHROPIC_API_KEY`, `ANTHROPIC_WORKSPACE_ID`: Claude를 쓸 때
+   - `GEMINI_API_KEY`: Gemini를 쓸 때
+   - 키가 없어도 키워드 분석 기본 모드로 동작합니다.
+3. 실행: `npm run dev` (http://localhost:3000)
 
-</div>
+## 보안 메모
+
+- API 키는 코드나 저장소에 넣지 않고 환경변수로만 설정합니다.
+- `firebase-applet-config.json`의 `apiKey`는 웹앱용 공개 식별자입니다. 데이터 접근은 `firestore.rules`로 제한합니다.

@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for the dedicated AI Model & API Key Settings menu within the Admin Console, including a customer-facing cleanup, real-time AI request/latency monitoring logs, book curation CRUD management across emotions, and model presets for Claude and Gemini.",
+  "updatedAt":  "2026-11-12T02:12:02.064231008Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
