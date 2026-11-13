@@ -1,8 +1,28 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // 관리자 판별: admins/{uid} 문서가 있으면 관리자 (Firebase 콘솔에서만 추가)
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // 프롬프트, 도서 목록: 손님 화면이 읽고, 관리자만 고친다.
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 관리자 명단: 본인 문서만 읽을 수 있고, 앱에서는 쓸 수 없다.
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // 그 외는 모두 막는다.
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

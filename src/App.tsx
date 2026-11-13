@@ -5,6 +5,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { auth, loginWithGoogle, logoutUser, onAuthStateChanged, type User } from './firebase.ts';
+import {
+  checkIsAdmin,
+  loadRemoteBooks,
+  loadRemoteConfig,
+  resetRemoteBooks,
+  resetRemoteConfig,
+  saveRemoteBooks,
+  saveRemoteConfig,
+} from './remoteConfig.ts';
 
 interface BookItem {
   name: string;
@@ -323,6 +332,23 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // 관리자 명단(Firestore admins/{uid})에 있는 계정만 관리자 화면을 쓸 수 있다.
+  const [adminState, setAdminState] = useState<'unknown' | 'yes' | 'no'>('unknown');
+  useEffect(() => {
+    if (!adminUser) {
+      setAdminState('unknown');
+      return;
+    }
+    let alive = true;
+    setAdminState('unknown');
+    checkIsAdmin(adminUser.uid).then((ok) => {
+      if (alive) setAdminState(ok ? 'yes' : 'no');
+    });
+    return () => {
+      alive = false;
+    };
+  }, [adminUser]);
+
   const handleGoogleSignIn = async () => {
     setLoginError('');
     try {
@@ -496,6 +522,29 @@ export default function App() {
     }
   };
 
+  // Firestore에 저장된 프롬프트, 도서 목록을 불러온다. 없거나 실패하면 기본값(또는 이 브라우저 저장값)을 쓴다.
+  useEffect(() => {
+    let alive = true;
+    loadRemoteConfig()
+      .then((c) => {
+        if (!alive || !c) return;
+        if (c.emotionPrompt) setEmotionPromptTemplate(c.emotionPrompt);
+        if (c.reasonPrompt) setReasonPromptTemplate(c.reasonPrompt);
+        if (c.systemInstruction) setSystemInstruction(c.systemInstruction);
+        if (typeof c.temperature === 'number') setTemperature(c.temperature);
+        if (typeof c.maxTokens === 'number') setMaxTokens(c.maxTokens);
+      })
+      .catch(() => {});
+    loadRemoteBooks()
+      .then((b) => {
+        if (alive && b) setBooksData(b);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Playground / Sandbox State
   const [mockInputMemo, setMockInputMemo] = useState<string>(
     '오늘 회사에서 중요한 발표를 마쳤는데 온몸에 힘이 다 빠지고 아무것도 하기가 싫어요. 눕고만 싶어요.'
@@ -647,18 +696,27 @@ export default function App() {
   };
 
   // Admin Config Actions
-  const handleSaveAdminConfig = () => {
+  const handleSaveAdminConfig = async () => {
     try {
       localStorage.setItem('cfg_emotion_prompt', emotionPromptTemplate);
       localStorage.setItem('cfg_reason_prompt', reasonPromptTemplate);
       localStorage.setItem('cfg_system_instruction', systemInstruction);
       localStorage.setItem('cfg_temperature', String(temperature));
       localStorage.setItem('cfg_max_tokens', String(maxTokens));
-      setAdminSaveNotice('프롬프트 및 AI 파라미터가 저장되었습니다. 손님 화면에 즉시 적용됩니다.');
-      setTimeout(() => setAdminSaveNotice(''), 3500);
     } catch {
-      setAdminSaveNotice('저장에 실패했습니다.');
+      // 브라우저 저장은 보조 수단이라 실패해도 서버 저장을 계속한다.
     }
+    if (!adminUser) return;
+    try {
+      await saveRemoteConfig(
+        { emotionPrompt: emotionPromptTemplate, reasonPrompt: reasonPromptTemplate, systemInstruction, temperature, maxTokens },
+        adminUser.uid
+      );
+      setAdminSaveNotice('프롬프트 및 AI 파라미터가 저장되었습니다. 손님 화면에 즉시 적용됩니다.');
+    } catch {
+      setAdminSaveNotice('서버 저장에 실패했습니다. 관리자 권한과 네트워크를 확인해 주세요.');
+    }
+    setTimeout(() => setAdminSaveNotice(''), 3500);
   };
 
   const handleResetAdminConfig = () => {
@@ -674,11 +732,13 @@ export default function App() {
       localStorage.removeItem('cfg_system_instruction');
       localStorage.removeItem('cfg_temperature');
       localStorage.removeItem('cfg_max_tokens');
-      setAdminSaveNotice('기본 템플릿과 파라미터로 복원되었습니다.');
-      setTimeout(() => setAdminSaveNotice(''), 3500);
     } catch {
       // ignore
     }
+    resetRemoteConfig()
+      .then(() => setAdminSaveNotice('기본 템플릿과 파라미터로 복원되었습니다.'))
+      .catch(() => setAdminSaveNotice('서버 복원에 실패했습니다. 관리자 권한과 네트워크를 확인해 주세요.'))
+      .finally(() => setTimeout(() => setAdminSaveNotice(''), 3500));
   };
 
   // Book Curation Actions
@@ -732,10 +792,14 @@ export default function App() {
     setBooksData(updated);
     try {
       localStorage.setItem('cfg_books_data', JSON.stringify(updated));
-      setAdminSaveNotice(`[${selectedCurationEmo}] 도서 목록이 저장되었습니다. 손님 화면에 즉시 적용됩니다.`);
-      setTimeout(() => setAdminSaveNotice(''), 3500);
     } catch {
       // ignore
+    }
+    if (adminUser) {
+      saveRemoteBooks(updated, adminUser.uid)
+        .then(() => setAdminSaveNotice(`[${selectedCurationEmo}] 도서 목록이 저장되었습니다. 손님 화면에 즉시 적용됩니다.`))
+        .catch(() => setAdminSaveNotice('서버 저장에 실패했습니다. 관리자 권한과 네트워크를 확인해 주세요.'))
+        .finally(() => setTimeout(() => setAdminSaveNotice(''), 3500));
     }
     setEditingBook(null);
   };
@@ -759,10 +823,14 @@ export default function App() {
     setBooksData(updated);
     try {
       localStorage.setItem('cfg_books_data', JSON.stringify(updated));
-      setAdminSaveNotice(`《${targetBook[0]}》 도서가 삭제되었습니다.`);
-      setTimeout(() => setAdminSaveNotice(''), 3500);
     } catch {
       // ignore
+    }
+    if (adminUser) {
+      saveRemoteBooks(updated, adminUser.uid)
+        .then(() => setAdminSaveNotice(`《${targetBook[0]}》 도서가 삭제되었습니다.`))
+        .catch(() => setAdminSaveNotice('서버 저장에 실패했습니다. 관리자 권한과 네트워크를 확인해 주세요.'))
+        .finally(() => setTimeout(() => setAdminSaveNotice(''), 3500));
     }
   };
 
@@ -771,8 +839,10 @@ export default function App() {
     setBooksData(DATA);
     try {
       localStorage.removeItem('cfg_books_data');
-      setAdminSaveNotice('도서 큐레이션 데이터가 초기 기본값으로 복원되었습니다.');
-      setTimeout(() => setAdminSaveNotice(''), 3500);
+      resetRemoteBooks()
+        .then(() => setAdminSaveNotice('도서 큐레이션 데이터가 초기 기본값으로 복원되었습니다.'))
+        .catch(() => setAdminSaveNotice('서버 복원에 실패했습니다. 관리자 권한과 네트워크를 확인해 주세요.'))
+        .finally(() => setTimeout(() => setAdminSaveNotice(''), 3500));
     } catch {
       // ignore
     }
@@ -1274,6 +1344,27 @@ export default function App() {
               {loginError && (
                 <p style={{ margin: 0, fontSize: '13px', color: '#dc2626' }}>{loginError}</p>
               )}
+            </div>
+          </div>
+        ) : adminState === 'unknown' ? (
+          <div className="admin-login-wrap">
+            <div className="admin-login-box">
+              <h2>관리자 콘솔</h2>
+              <p>관리자 권한 확인 중...</p>
+            </div>
+          </div>
+        ) : adminState === 'no' ? (
+          <div className="admin-login-wrap">
+            <div className="admin-login-box">
+              <h2>접근 권한이 없어요</h2>
+              <p>
+                {adminUser.email || '이 계정'}은 관리자 명단에 없습니다. 관리자라면 Firebase 콘솔의 Firestore
+                <b> admins </b>컬렉션에 아래 UID로 문서를 추가한 뒤 다시 로그인해 주세요.
+              </p>
+              <code style={{ display: 'block', wordBreak: 'break-all', fontSize: '12px', margin: '8px 0' }}>{adminUser.uid}</code>
+              <button type="button" className="google-login-btn" onClick={handleGoogleSignOut}>
+                로그아웃
+              </button>
             </div>
           </div>
         ) : (
