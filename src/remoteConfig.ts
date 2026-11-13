@@ -72,12 +72,30 @@ export async function resetRemoteBooks(): Promise<void> {
   await deleteDoc(booksRef());
 }
 
-/** 관리자 명단(admins/{uid})에 문서가 있으면 관리자. */
-export async function checkIsAdmin(uid: string): Promise<boolean> {
+/** 관리자가 처음 접속했을 때 DB에 문서가 없으면 현재 값(기본값)으로 채운다. 이미 있으면 건드리지 않는다. */
+export async function seedRemoteIfMissing(
+  cfg: Required<RemoteAppConfig>,
+  books: BookEntry[],
+  uid: string
+): Promise<void> {
+  const [appSnap, booksSnap] = await Promise.all([getDoc(appRef()), getDoc(booksRef())]);
+  if (!appSnap.exists()) await saveRemoteConfig(cfg, uid);
+  if (!booksSnap.exists()) await saveRemoteBooks(books, uid);
+}
+
+/** 관리자 명단(admins/{uid})에 문서가 있으면 관리자. 실패 원인도 함께 돌려줘 화면에 보여 준다. */
+export interface AdminCheck {
+  ok: boolean;
+  detail: string;
+}
+
+export async function checkIsAdmin(uid: string): Promise<AdminCheck> {
   try {
     const snap = await getDoc(doc(db, 'admins', uid));
-    return snap.exists();
-  } catch {
-    return false;
+    return snap.exists()
+      ? { ok: true, detail: '확인됨' }
+      : { ok: false, detail: `문서 없음: admins/${uid}` };
+  } catch (e: any) {
+    return { ok: false, detail: `읽기 오류(${e?.code || 'unknown'}): ${e?.message || ''}` };
   }
 }

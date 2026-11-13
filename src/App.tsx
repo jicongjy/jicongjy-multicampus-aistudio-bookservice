@@ -12,6 +12,7 @@ import {
   resetRemoteBooks,
   resetRemoteConfig,
   saveRemoteBooks,
+  seedRemoteIfMissing,
   saveRemoteConfig,
 } from './remoteConfig.ts';
 
@@ -334,6 +335,7 @@ export default function App() {
 
   // 관리자 명단(Firestore admins/{uid})에 있는 계정만 관리자 화면을 쓸 수 있다.
   const [adminState, setAdminState] = useState<'unknown' | 'yes' | 'no'>('unknown');
+  const [adminDetail, setAdminDetail] = useState<string>('');
   useEffect(() => {
     if (!adminUser) {
       setAdminState('unknown');
@@ -341,8 +343,10 @@ export default function App() {
     }
     let alive = true;
     setAdminState('unknown');
-    checkIsAdmin(adminUser.uid).then((ok) => {
-      if (alive) setAdminState(ok ? 'yes' : 'no');
+    checkIsAdmin(adminUser.uid).then((r) => {
+      if (!alive) return;
+      setAdminDetail(r.detail);
+      setAdminState(r.ok ? 'yes' : 'no');
     });
     return () => {
       alive = false;
@@ -544,6 +548,23 @@ export default function App() {
       alive = false;
     };
   }, []);
+
+  // 관리자가 처음 접속하면 Firestore에 아직 없는 문서를 현재 값(기본값)으로 채운다.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (adminState !== 'yes' || !adminUser || seededRef.current) return;
+    seededRef.current = true;
+    // 서버 값을 불러오는 중에 덮어쓰지 않도록 잠시 기다린 뒤, 문서가 없을 때만 채운다.
+    const t = setTimeout(() => {
+      seedRemoteIfMissing(
+        { emotionPrompt: emotionPromptTemplate, reasonPrompt: reasonPromptTemplate, systemInstruction, temperature, maxTokens },
+        booksData,
+        adminUser.uid
+      ).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminState, adminUser]);
 
   // Playground / Sandbox State
   const [mockInputMemo, setMockInputMemo] = useState<string>(
@@ -1362,6 +1383,9 @@ export default function App() {
                 <b> admins </b>컬렉션에 아래 UID로 문서를 추가한 뒤 다시 로그인해 주세요.
               </p>
               <code style={{ display: 'block', wordBreak: 'break-all', fontSize: '12px', margin: '8px 0' }}>{adminUser.uid}</code>
+              <p style={{ fontSize: '12px', color: 'var(--muted)', wordBreak: 'break-all', margin: '0 0 8px' }}>
+                확인 결과: {adminDetail}
+              </p>
               <button type="button" className="google-login-btn" onClick={handleGoogleSignOut}>
                 로그아웃
               </button>
