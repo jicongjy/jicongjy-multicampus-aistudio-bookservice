@@ -304,7 +304,11 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const isAdminRoute = currentPath === '/admin' || currentPath.startsWith('/admin/');
+  // VITE_FORCE_ADMIN=true 로 빌드하면(GitHub Pages 관리자 전용 배포) 경로와 상관없이 관리자 화면을 연다.
+  const isAdminRoute =
+    import.meta.env.VITE_FORCE_ADMIN === 'true' ||
+    currentPath === '/admin' ||
+    currentPath.startsWith('/admin/');
 
   // Firebase Google Auth State for Admin
   const [adminUser, setAdminUser] = useState<User | null>(null);
